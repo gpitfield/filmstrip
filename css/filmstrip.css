@@ -1,0 +1,93 @@
+body {
+	background-color: black;
+}
+
+.content {
+	width: 100%;
+/*	padding-top: 50px;
+*/}
+
+img {
+	max-width: 100%;
+	max-height: 100%
+}
+
+.gallery {
+	padding: 10px;
+	display: inline-block;
+	vertical-align: top;
+	margin:auto;
+}
+
+.landscape {
+	max-width: 35%;	
+	max-height: 50%;
+}
+
+.portrait {
+	display: inline-block;
+	padding:5px;
+	width: 49%;
+	max-height: 100%;
+}
+
+.detail {
+	max-width: 100%;
+	height: 100vh;
+	margin: auto;
+	display: block;
+	text-align: center;
+	/*vertical-align: middle;*/
+}
+
+.navbar.navbar-inverse {
+	background: rgba(0, 0, 0, 0.4);
+	border-style: none; 
+}
+
+.navbar-right {
+	margin-right: 10px;
+}
+
+.navbar-brand {
+	padding-left:10px;
+}
+
+/* title */
+.navbar-inverse .navbar-brand {
+    color: #BBB;
+}
+.navbar-inverse .navbar-brand:hover,
+.navbar-inverse .navbar-brand:focus {
+    color: #999;
+}
+/* link */
+.navbar-inverse .navbar-nav > li > a {
+    color: #BBB;
+}
+.navbar-inverse .navbar-nav > li > a:hover,
+.navbar-inverse .navbar-nav > li > a:focus {
+    color: #999;
+}
+.navbar-inverse .navbar-nav > .active > a, 
+.navbar-inverse .navbar-nav > .active > a:hover, 
+.navbar-inverse .navbar-nav > .active > a:focus {
+    color: #555;
+    background-color: #E7E7E7;
+}
+.navbar-inverse .navbar-nav > .open > a, 
+.navbar-inverse .navbar-nav > .open > a:hover, 
+.navbar-inverse .navbar-nav > .open > a:focus {
+    color: #555;
+    background-color: #D5D5D5;
+}
+/* text */
+.navbar-inverse .navbar-text {
+    color: #BBB;
+}
+
+/* caret */
+.navbar-inverse .navbar-nav > .dropdown > a .caret {
+    border-top-color: #BBB;
+    border-bottom-color: #BBB;
+}
