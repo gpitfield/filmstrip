@@ -85,6 +85,10 @@ func (s s3Driver) PutFile(localPrefix string, path string, force bool) (err erro
 
 // fileExistsAtPath checks equality of the md5 hash of the file against the S3 eTag
 func (s *s3Driver) fileExistsAtPath(b []byte, path string) bool {
+	err := s.InitializeSession()
+	if err != nil {
+		return false
+	}
 	hash := md5.New()
 	hash.Write(b)
 	tag := fmt.Sprintf("%x", hash.Sum(nil))
@@ -101,6 +105,36 @@ func (s *s3Driver) fileExistsAtPath(b []byte, path string) bool {
 }
 
 func (s s3Driver) FlushFiles(validPaths []string) (err error) {
+	err = s.InitializeSession()
+	if err != nil {
+		return
+	}
+	log.Println(validPaths)
+	var pathMap = map[string]bool{}
+	for _, path := range validPaths {
+		pathMap[path] = true
+	}
+	params := &s3.ListObjectsInput{
+		Bucket: aws.String(viper.GetString(S3_BUCKET)),
+	}
+	resp, err := s.svc.ListObjects(params)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	for _, result := range resp.Contents {
+		if _, exists := pathMap["/"+*result.Key]; !exists {
+			log.Printf("deleting %s", *result.Key)
+			delParams := &s3.DeleteObjectInput{
+				Bucket: params.Bucket,
+				Key:    result.Key,
+			}
+			_, err = s.svc.DeleteObject(delParams)
+			if err != nil {
+				return
+			}
+		}
+	}
 	return
 }
 

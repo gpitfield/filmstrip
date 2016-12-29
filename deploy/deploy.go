@@ -17,6 +17,31 @@ const (
 // Deploy the site to its destination, forcing overwrite if force is true
 func Deploy(force bool) {
 	DeployDir(2, "", force) // deploy up to 2 levels down
+	Flush()                 // remove any files that no longer belong
+}
+
+func Flush() {
+	drv := viper.GetString(SITE_DRIVER)
+	paths := GetPaths("")
+	err := driver.Drivers[drv].FlushFiles(paths)
+	if err != nil {
+		log.Error(err)
+	}
+}
+
+func GetPaths(prefix string) (paths []string) {
+	files, err := ioutil.ReadDir(build.PubSiteDir + prefix)
+	if err != nil {
+		log.Error(err)
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			paths = append(paths, GetPaths(prefix+"/"+f.Name())...)
+			continue
+		}
+		paths = append(paths, prefix+"/"+f.Name())
+	}
+	return paths
 }
 
 func DeployDir(levels int, prefix string, force bool) {
