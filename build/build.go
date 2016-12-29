@@ -243,7 +243,7 @@ func getInfo(path string, filename string) (info PrintInfo) {
 			log.Error(err)
 		} else {
 			info.Date = date
-			info.DateString = info.Date.Format("January 2, 2006")
+			info.DateString = info.Date.Format("January, 2006")
 		}
 	}
 

@@ -1,8 +1,10 @@
 <nav class="navbar navbar-inverse navbar-fixed-bottom">
   <div class="container-fullwidth">
-    <div class="navbar-header">
-      <p class="navbar-text">{{.Image.Description}}{{if and .Image.Description .Image.DateString}} | {{end}}{{.Image.DateString}}</p>
-    </div>
+    {{if .Image.Description}}
+      <div class="navbar-header">
+        <p class="navbar-text">{{.Image.Description}}</p>
+      </div>
+    {{end}}
     <div>      
       <p class="navbar-text"><small>{{.Image.CameraInfo}}</small></p>
     </div>
