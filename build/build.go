@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	PubSiteDir   = "site"
-	CSSStylesDir = "css"
+	PubSiteDir    = "site"
+	CSSStylesDir  = "css"
+	JavaScriptDir = "js"
 )
 
 var (
@@ -75,26 +76,30 @@ func Build() {
 	for i, _ := range collections {
 		buildCollection(i, collections, navs, collections[i] == root)
 	}
-	cssFiles, err := ioutil.ReadDir(CSSStylesDir)
-	if err != nil {
-		log.Error(err)
+
+	for _, dir := range []string{CSSStylesDir, JavaScriptDir} {
+		files, err := ioutil.ReadDir(dir)
+		if err != nil {
+			log.Error(err)
+		}
+		for _, file := range files {
+			in, err := os.Open(dir + "/" + file.Name())
+			if err != nil {
+				log.Error(err)
+			}
+			out, err := os.Create(PubSiteDir + "/" + dir + "/" + file.Name())
+			if err != nil {
+				log.Error(err)
+			}
+			_, err = io.Copy(out, in)
+			if err != nil {
+				log.Error(err)
+			}
+			in.Close()
+			out.Close()
+		}
 	}
-	for _, file := range cssFiles {
-		in, err := os.Open(CSSStylesDir + "/" + file.Name())
-		if err != nil {
-			log.Error(err)
-		}
-		out, err := os.Create(PubSiteDir + "/" + CSSStylesDir + "/" + file.Name())
-		if err != nil {
-			log.Error(err)
-		}
-		_, err = io.Copy(out, in)
-		if err != nil {
-			log.Error(err)
-		}
-		in.Close()
-		out.Close()
-	}
+
 	log.Infof("built in %v", time.Since(start))
 }
 
@@ -329,6 +334,10 @@ func flushPrevious() {
 		log.Error(err)
 	}
 	err = os.Mkdir(PubSiteDir+"/"+CSSStylesDir, os.ModeDir|os.ModePerm)
+	if err != nil && !strings.Contains(err.Error(), "file exists") {
+		log.Error(err)
+	}
+	err = os.Mkdir(PubSiteDir+"/"+JavaScriptDir, os.ModeDir|os.ModePerm)
 	if err != nil && !strings.Contains(err.Error(), "file exists") {
 		log.Error(err)
 	}

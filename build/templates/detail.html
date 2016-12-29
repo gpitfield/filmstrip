@@ -14,13 +14,17 @@
   <body>
     {{template "nav.html" .}}
     <div class="content">
-      <div class="gallery detail">
+      <div class="detail">
         <img src="images/{{.Image.Filename}}">
       </div>
     </div>
     {{template "bottom-nav.html" .}}
     <script type="text/javascript">
+      $( document ).on( "mobileinit", function() {
+          $.mobile.loader.prototype.options.disabled = true;
+      });
       var hidden = false
+      var tapped = false
       var path = window.location.href.split("?")
       if (path.length > 1) {
         q = path[1].split("=")
@@ -63,7 +67,7 @@
         }
       });
       $(document).mousemove(function(){
-          if (hidden) {
+          if (hidden && !tapped) {
             $(".navbar").fadeIn(300)
             hidden = false
           }        
@@ -71,22 +75,37 @@
       $(document).ready(function(){
         setTimeout (
           function() {
-            if (!hidden) {
+            if (!hidden && !tapped) {
               $(".navbar").fadeOut()
               hidden = true              
             }
           },
           5000)
       });
-      // $(".detail").on("swipeleft", function(){
-      //   window.location.href = "{{.Next.Title}}.html"
-      // });
-      // $(".detail").on("swiperight", function(){
-      //     window.location.href = "{{.Previous.Title}}.html"
-      // });
-      // $(".detail").on("swipedown", function(){
-      //       window.location.href = "index.html"
-      // });
+       $(".detail").on("tapone", function(){
+          tapped = true
+          if (hidden) {
+            $(".navbar").fadeIn()
+            hidden = false
+          } else {
+            $(".navbar").fadeOut()
+            hidden = true
+          }
+        });
+        $(document).on("swipeleft swipeleftup swipeleftdown", function(){
+          var hide = ''
+            if (hidden) {
+              hide = "?hidden=true"
+            }
+          window.location.href = "{{.Next.Title}}.html" + hide
+        });
+        $(document).on("swiperight swiperightup swiperightdown", function(){
+          var hide = ''
+            if (hidden) {
+              hide = "?hidden=true"
+            }
+            window.location.href = "{{.Previous.Title}}.html" + hide
+        });
     </script>
   </body>
 </html>

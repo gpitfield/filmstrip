@@ -4,8 +4,7 @@ body {
 
 .content {
 	width: 100%;
-/*	padding-top: 50px;
-*/}
+}
 
 img {
 	max-width: 100%;
@@ -14,6 +13,7 @@ img {
 
 .gallery {
 	padding: 10px;
+	padding-top: 50px;
 	display: inline-block;
 	vertical-align: top;
 	margin:auto;
@@ -32,12 +32,13 @@ img {
 }
 
 .detail {
+	padding: 10px;
 	max-width: 100%;
 	height: 100vh;
 	margin: auto;
 	display: block;
 	text-align: center;
-	/*vertical-align: middle;*/
+	vertical-align: middle;
 }
 
 .navbar.navbar-inverse {

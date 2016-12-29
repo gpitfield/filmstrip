@@ -81,6 +81,7 @@ func renderGallery(collectionName string, collections []NavInfo, images []PrintI
 	gallery["Images"] = images
 	gallery["Next"] = ""
 	gallery["Previous"] = ""
+	gallery["Gallery"] = true
 	if len(collections) > 1 {
 		if collIndex > 0 {
 			if collections[collIndex-1].Name != root {
