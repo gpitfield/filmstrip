@@ -41,6 +41,19 @@ img {
 	vertical-align: middle;
 }
 
+.about {
+	padding-top:50px;
+	color: white;
+	display: inline-block;
+}
+
+.about img {
+	padding: 10px;
+	width: 20%;
+	width: 200px;
+	display: inline-block;		
+}
+
 .navbar.navbar-inverse {
 	background: rgba(0, 0, 0, 0.4);
 	border-style: none; 

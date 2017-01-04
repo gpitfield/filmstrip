@@ -3,6 +3,7 @@ package build
 import (
 	"bytes"
 	"html/template"
+	"os"
 	"strings"
 
 	"github.com/GeertJohan/go.rice"
@@ -39,6 +40,26 @@ func loadTemplates(list ...string) *template.Template {
 type NavInfo struct {
 	Name string
 	Link string
+}
+
+func renderAbout(collections []NavInfo) *bytes.Buffer {
+	os.Mkdir(PubSiteDir+"/"+AboutDir, os.ModeDir|os.ModePerm)
+	about := make(map[string]interface{})
+	about["Title"] = viper.GetString("about-title")
+	about["About"] = true
+	about["Headline"] = viper.GetString("about-headline")
+	aboutText := viper.GetStringSlice("about-text")
+	aboutHtml := []template.HTML{}
+	for _, el := range aboutText {
+		aboutHtml = append(aboutHtml, template.HTML(el))
+	}
+	about["Text"] = aboutHtml
+	about["Image"] = viper.GetString("about-image")
+	about["Collections"] = collections
+	buf := new(bytes.Buffer)
+	templates.ExecuteTemplate(buf, "about.html", about)
+	return buf
+
 }
 
 func renderDetail(collectionName string, collections []NavInfo, info PrintInfo, collectionInfo []PrintInfo) *bytes.Buffer {

@@ -15,7 +15,7 @@
     {{template "nav.html" .}}
     <div class="content">
       <div class="detail">
-        <img src="images/{{.Image.Filename}}">
+        <img src="images/{{.Image.Filename}}" srcset="{{range .Image.SrcImages}}images/{{ .Name }} {{ .WVal }}, {{ end }}">
       </div>
     </div>
     {{template "bottom-nav.html" .}}

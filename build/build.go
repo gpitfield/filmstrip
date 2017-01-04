@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	_ "image/jpeg"
 	"io"
 	"io/ioutil"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gpitfield/filmstrip/asset"
 	log "github.com/gpitfield/relog"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/mknote"
@@ -22,6 +23,8 @@ const (
 	PubSiteDir    = "site"
 	CSSStylesDir  = "css"
 	JavaScriptDir = "js"
+	ImagesDir     = "images"
+	AboutDir      = "about"
 )
 
 var (
@@ -29,280 +32,163 @@ var (
 	templates      *template.Template
 )
 
-type PrintInfo struct {
-	Filename    string
-	Title       string
-	Order       int
-	Description string
-	Date        time.Time
-	DateString  string
-	CameraInfo  string
-	Copyright   string
+func init() {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".") // config file in working directory
+	err := viper.ReadInConfig()
+	if err != nil {
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+	sourceLocation = viper.GetString("source-dir") // build needs a source folder
+	exif.RegisterParsers(mknote.All...)
 }
 
-type Ordered []PrintInfo
-
-func (o Ordered) Len() int      { return len(o) }
-func (o Ordered) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o Ordered) Less(i, j int) bool {
-	if o[j].Order == 0 && o[j].Order == 0 {
-		return o[i].Date.Before(o[j].Date)
-	}
-	if o[j].Order == 0 {
-		return true
-	}
-	if o[i].Order == 0 {
-		return false
-	}
-	return o[i].Order < o[j].Order
-}
-
-// Build the site from the provided content
-func Build() {
+// Build the site from the provided image content where changed. If force is true, regenerate the site regardless of changes,
+// typically if the HTML has changed. Force will not copy over unchanged images, it just regenerates associated HTML.
+func Build(force bool) {
 	start := time.Now()
-	flushPrevious()                               // flush all previous data from PubSiteDir
-	collections := getCollections(sourceLocation) // get the directories within the sourceLocation
+	templates = loadTemplates("detail.html", "bootstrap.html", "nav.html", "gallery.html", "bottom-nav.html", "about.html")
+	Scaffold()
+
+	collections := getCollections(sourceLocation)                                        // get the directories within the sourceLocation
+	flushPrevious(append(collections, ImagesDir, AboutDir, CSSStylesDir, JavaScriptDir)) // flush all expired/deleted data from PubSiteDir
+	// root := viper.GetString("root-collection")
 	var navs = make([]NavInfo, len(collections))
-	root := viper.GetString("root-collection")
 	for i, _ := range collections {
-		navs[i] = NavInfo{Name: collections[i]}
-		if collections[i] == root {
-			navs[i].Link = "/index.html"
-		} else {
-			navs[i].Link = "/" + collections[i] + "/index.html"
+		navs[i] = NavInfo{
+			Name: collections[i],
+			Link: "/" + collections[i] + "/index.html",
 		}
 	}
-	templates = loadTemplates("detail.html", "bootstrap.html", "nav.html", "gallery.html", "bottom-nav.html")
 	for i, _ := range collections {
-		buildCollection(i, collections, navs, collections[i] == root)
+		// buildCollection(i, collections, navs, collections[i] == root)
+		buildCollection(i, collections, navs, force)
 	}
 
-	for _, dir := range []string{CSSStylesDir, JavaScriptDir} {
-		files, err := ioutil.ReadDir(dir)
-		if err != nil {
-			log.Error(err)
-		}
-		for _, file := range files {
-			in, err := os.Open(dir + "/" + file.Name())
-			if err != nil {
-				log.Error(err)
-			}
-			out, err := os.Create(PubSiteDir + "/" + dir + "/" + file.Name())
-			if err != nil {
-				log.Error(err)
-			}
-			_, err = io.Copy(out, in)
-			if err != nil {
-				log.Error(err)
-			}
-			in.Close()
-			out.Close()
-		}
-	}
-
+	buildAbout(navs)
 	log.Infof("built in %v", time.Since(start))
 }
 
-func buildCollection(index int, colls []string, navs []NavInfo, root bool) {
-	collectionDirs(colls[index], root)
-	var imageInfo []PrintInfo
-	images, err := ioutil.ReadDir(sourceLocation + "/" + colls[index])
+func buildAbout(navs []NavInfo) {
+	about := renderAbout(navs)
+	err := ioutil.WriteFile(PubSiteDir+"/"+AboutDir+"/index.html", about.Bytes(), 0644)
 	if err != nil {
 		log.Error(err)
 	}
+
+	inCopy, err := os.Open(viper.GetString("about-image"))
+	if err != nil {
+		log.Error(err)
+	}
+	defer inCopy.Close()
+	outFile, err := os.Create(PubSiteDir + "/" + AboutDir + "/" + "about.jpg")
+	if err != nil {
+		log.Error(err)
+	}
+	_, err = io.Copy(outFile, inCopy) // use an exact copy so the hash doesn't mutate
+	if err != nil {
+		log.Error(err)
+	}
+	outFile.Close()
+}
+
+func buildCollection(index int, colls []string, navs []NavInfo, force bool) {
+	collectionDirs(colls[index])
+	var (
+		imageInfo     []PrintInfo
+		validFiles    = map[string]bool{}
+		inPath        = sourceLocation + "/" + colls[index]
+		outPath       = PubSiteDir + "/" + colls[index]
+		outImagesPath = outPath + "/" + ImagesDir
+	)
+	images, err := ioutil.ReadDir(inPath)
+	if err != nil {
+		log.Error(err)
+	}
+
+	// go through the images, and if they are changed vs the site folder, cut and copy them over
+	// flush any images that are no longer in the collection
+	// using the imageInfo slice, generate the HTML for each image as well as the gallery
+	// flush any HTML for images no longer present
+
 	for _, image := range images {
 		if image.IsDir() {
-			log.Warnf("Sub-collections not supported (%s/%s)", colls[index], image.Name())
+			log.Warnf("Sub-collections not yet supported (%s/%s)", colls[index], image.Name())
 			continue
 		}
-		info := getInfo(sourceLocation+"/"+colls[index], image.Name())
-		imageInfo = append(imageInfo, info)
-		copyImage(colls[index], info, root)
+		// see if image has changed
+		source, _ := ioutil.ReadFile(inPath + "/" + image.Name())
+		inHash := asset.Hash(source)
+		dest, _ := ioutil.ReadFile(outImagesPath + "/" + image.Name())
+		outHash := asset.Hash(dest)
+		if force || inHash != outHash {
+			info := getInfo(image.Name(), io.Reader(bytes.NewReader(source)))
+			srcs := copyImage(colls[index], info, inHash == outHash)
+			info.SrcImages = srcs
+			imageInfo = append(imageInfo, info)
+			for _, src := range srcs {
+				validFiles[src.Name] = true
+			}
+		} else {
+			info := getInfo(image.Name(), nil) // get the basic info for gallery generation
+			validFiles[stripExtension(image.Name())] = true
+			imageInfo = append(imageInfo, info)
+		}
 	}
+
 	sort.Sort(Ordered(imageInfo))
 	var page, gallery *bytes.Buffer
 	for _, info := range imageInfo {
-		if root && viper.GetString("home-title") != "" {
-			page = renderDetail(viper.GetString("home-title"), navs, info, imageInfo)
-		} else {
+		validFiles[stripExtension(info.Filename)] = true
+		validFiles[info.Title] = true
+		if info.IncludesExif {
 			page = renderDetail(colls[index], navs, info, imageInfo)
-		}
-		if root {
-			err = ioutil.WriteFile(PubSiteDir+"/"+info.Title+".html", page.Bytes(), 0644)
-		} else {
 			err = ioutil.WriteFile(PubSiteDir+"/"+colls[index]+"/"+info.Title+".html", page.Bytes(), 0644)
-		}
-		if err != nil {
-			log.Error(err)
-		}
-	}
-	if root && viper.GetString("home-title") != "" {
-		gallery = renderGallery(viper.GetString("home-title"), navs, imageInfo, index)
-	} else {
-		gallery = renderGallery(colls[index], navs, imageInfo, index)
-	}
-	if root {
-		err = ioutil.WriteFile(PubSiteDir+"/index.html", gallery.Bytes(), 0644)
-	} else {
-		err = ioutil.WriteFile(PubSiteDir+"/"+colls[index]+"/index.html", gallery.Bytes(), 0644)
-	}
-	if err != nil {
-		log.Error(err)
-	}
-}
-
-func copyImage(collection string, info PrintInfo, root bool) {
-	var (
-		in, out *os.File
-		err     error
-	)
-
-	in, err = os.Open(sourceLocation + "/" + collection + "/" + info.Filename)
-	if err != nil {
-		log.Error(err)
-	}
-	if root {
-		out, err = os.Create(PubSiteDir + "/images/" + info.Filename)
-	} else {
-		out, err = os.Create(PubSiteDir + "/" + collection + "/images/" + info.Filename)
-	}
-	if err != nil {
-		log.Error(err)
-	}
-	_, err = io.Copy(out, in)
-	if err != nil {
-		log.Error(err)
-	}
-	in.Close()
-	out.Close()
-}
-
-func collectionDirs(collection string, root bool) {
-	if root {
-		err := os.Mkdir(PubSiteDir+"/images", os.ModeDir|os.ModePerm)
-		if err != nil {
-			log.Error(err)
-		}
-	} else {
-		err := os.Mkdir(PubSiteDir+"/"+collection, os.ModeDir|os.ModePerm)
-		if err != nil {
-			log.Error(err)
-		}
-		err = os.Mkdir(PubSiteDir+"/"+collection+"/images", os.ModeDir|os.ModePerm)
-		if err != nil {
-			log.Error(err)
-		}
-	}
-}
-
-func stripExtension(in string) string {
-	split := strings.Split(in, ".")
-	if len(split) > 1 {
-		return strings.Join(split[0:len(split)-1], ".")
-	}
-	return in
-}
-
-func getInfo(path string, filename string) (info PrintInfo) {
-	f, err := os.Open(path + "/" + filename)
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	x, err := exif.Decode(f)
-	if err != nil {
-		log.Fatal(err)
-	}
-	info.Filename = filename
-	info.Title = stripExtension(filename)
-	if strings.HasPrefix(filename, "_") {
-		parts := strings.SplitN(strings.TrimLeft(filename, "_"), "_", 2)
-		if len(parts) == 2 {
-			pos, err := strconv.Atoi(parts[0])
+			validFiles[info.Title+".html"] = true
 			if err != nil {
 				log.Error(err)
-			} else {
-				info.Order = pos
-				info.Title = stripExtension(parts[1])
 			}
 		}
+		// if root && viper.GetString("home-title") != "" {
+		// 	page = renderDetail(viper.GetString("home-title"), navs, info, imageInfo)
+		// } else {
+		// }
+		// if root {
+		// 	err = ioutil.WriteFile(PubSiteDir+"/"+info.Title+".html", page.Bytes(), 0644)
+		// } else {
+		// }
 	}
-	if tag, err := x.Get(exif.Copyright); err == nil && tag.String() != "" {
-		info.Copyright = strings.Trim(tag.String(), "\"")
-	} else {
-		info.Copyright = viper.GetString("copyright")
-	}
+	// if root && viper.GetString("home-title") != "" {
+	// 	gallery = renderGallery(viper.GetString("home-title"), navs, imageInfo, index)
+	// 	err = ioutil.WriteFile(PubSiteDir+"/index.html", gallery.Bytes(), 0644)
+	// 	if err != nil {
+	// 		log.Error(err)
+	// 	}
+	// }
 
-	if tag, err := x.Get(exif.ImageDescription); err == nil && tag.String() != "" {
-		info.Description = strings.Trim(tag.String(), "\"")
-	}
-
-	if tag, err := x.Get(exif.DateTimeOriginal); err == nil && tag.String() != "" {
-		date, err := time.Parse("\"2006:01:02 15:04:05\"", tag.String())
-		if err != nil {
-			log.Error(err)
-		} else {
-			info.Date = date
-			info.DateString = info.Date.Format("January, 2006")
-		}
-	}
-
-	if fstop, err := x.Get(exif.FNumber); err == nil {
-		f := strings.Split(strings.Trim(fstop.String(), "\""), "/")
-		var fNum = make([]int, 2)
-		fNum[0], err = strconv.Atoi(f[0])
-		if err != nil {
-			log.Error(err)
-		}
-		fNum[1], err = strconv.Atoi(f[1])
-		if err != nil {
-			log.Error(err)
-		}
-		if fNum[1] == 1 {
-			info.CameraInfo = fmt.Sprintf("f/%d", fNum[0])
-		} else {
-			info.CameraInfo = fmt.Sprintf("f/%.1f", float64(fNum[0])/float64(fNum[1]))
-		}
-	} else {
+	gallery = renderGallery(colls[index], navs, imageInfo, index)
+	err = ioutil.WriteFile(PubSiteDir+"/"+colls[index]+"/index.html", gallery.Bytes(), 0644)
+	validFiles["index.html"] = true
+	if err != nil {
 		log.Error(err)
 	}
+	flushInvalid(outPath, validFiles)
+}
 
-	if tag, err := x.Get(exif.ExposureTime); err == nil {
-		xTime := strings.Trim(tag.String(), "\"")
-		if info.CameraInfo != "" {
-			info.CameraInfo += " | "
-		}
-		info.CameraInfo += xTime + "s"
-	}
+func copyImage(collection string, info PrintInfo, metaOnly bool) (srcSet []asset.SrcImage) {
+	return asset.RespImages(sourceLocation+"/"+collection+"/"+info.Filename, PubSiteDir+"/"+collection+"/"+ImagesDir, stripExtension(info.Filename), extension(info.Filename), metaOnly)
+}
 
-	if tag, err := x.Get(exif.ISOSpeedRatings); err == nil {
-		if info.CameraInfo != "" {
-			info.CameraInfo += " | "
-		}
-		info.CameraInfo += "ISO " + tag.String()
+func collectionDirs(collection string) {
+	err := os.Mkdir(PubSiteDir+"/"+collection, os.ModeDir|os.ModePerm)
+	if err != nil && !strings.Contains(err.Error(), "file exists") {
+		log.Error(err)
 	}
-
-	if tag, err := x.Get(exif.FocalLengthIn35mmFilm); err == nil {
-		if info.CameraInfo != "" {
-			info.CameraInfo += " | "
-		}
-		info.CameraInfo += tag.String() + "mm"
+	err = os.Mkdir(PubSiteDir+"/"+collection+"/"+ImagesDir, os.ModeDir|os.ModePerm)
+	if err != nil && !strings.Contains(err.Error(), "file exists") {
+		log.Error(err)
 	}
-
-	if tag, err := x.Get(exif.Model); err == nil {
-		if info.CameraInfo != "" {
-			info.CameraInfo += " | "
-		}
-		info.CameraInfo += strings.Trim(tag.String(), "\"")
-	}
-
-	if tag, err := x.Get(exif.LensModel); err == nil {
-		if info.CameraInfo != "" {
-			info.CameraInfo += " | "
-		}
-		info.CameraInfo += strings.Trim(tag.String(), "\"")
-	}
-	return
 }
 
 func getCollections(source string) (colls []string) {
@@ -316,41 +202,4 @@ func getCollections(source string) (colls []string) {
 		}
 	}
 	return colls
-}
-
-func flushPrevious() {
-	subDirs, err := ioutil.ReadDir(PubSiteDir)
-	if err != nil {
-		log.Error(err)
-	}
-	for _, dir := range subDirs {
-		err := os.RemoveAll(PubSiteDir + "/" + dir.Name())
-		if err != nil {
-			log.Error(err)
-		}
-	}
-	err = os.Mkdir(PubSiteDir, os.ModeDir|os.ModePerm)
-	if err != nil && !strings.Contains(err.Error(), "file exists") {
-		log.Error(err)
-	}
-	err = os.Mkdir(PubSiteDir+"/"+CSSStylesDir, os.ModeDir|os.ModePerm)
-	if err != nil && !strings.Contains(err.Error(), "file exists") {
-		log.Error(err)
-	}
-	err = os.Mkdir(PubSiteDir+"/"+JavaScriptDir, os.ModeDir|os.ModePerm)
-	if err != nil && !strings.Contains(err.Error(), "file exists") {
-		log.Error(err)
-	}
-}
-
-func init() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".") // config file in working directory
-	err := viper.ReadInConfig()
-	if err != nil {
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
-	}
-	sourceLocation = viper.GetString("source-dir") // build needs a source folder
-	exif.RegisterParsers(mknote.All...)
 }

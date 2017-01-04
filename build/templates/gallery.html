@@ -18,7 +18,7 @@
       {{range .Images}}
         <div class="portrait">
           <a href="{{.Title}}.html">        
-            <img src="images/{{.Filename}}">
+            <img src="images/{{.Filename}}" srcset="{{range .SrcImages}}images/{{ .Name }} {{ .WVal }}, {{ end }}">
           </a>
         </div>
       {{end}}
@@ -37,12 +37,6 @@
             break
         }
       });
-      // $(document).on("swipeleft", function(){
-      //   window.location.href = "{{.Next}}/index.html"
-      // });
-      // $(document).on("swiperight", function(){
-      //   window.location.href = "{{.Previous}}/index.html"
-      // });
     </script>
   </body>
 </html>

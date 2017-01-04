@@ -2,15 +2,13 @@ package s3
 
 import (
 	"bytes"
-	"crypto/md5"
-	// "encoding/hex"
-	"fmt"
 	"io/ioutil"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/gpitfield/filmstrip/asset"
 	"github.com/gpitfield/filmstrip/deploy/driver"
 	log "github.com/gpitfield/relog"
 	"github.com/spf13/viper"
@@ -89,9 +87,7 @@ func (s *s3Driver) fileExistsAtPath(b []byte, path string) bool {
 	if err != nil {
 		return false
 	}
-	hash := md5.New()
-	hash.Write(b)
-	tag := fmt.Sprintf("%x", hash.Sum(nil))
+	tag := asset.Hash(b)
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(viper.GetString(S3_BUCKET)),
 		Key:    aws.String(path),
