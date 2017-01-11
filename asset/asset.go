@@ -1,11 +1,16 @@
+// Package asset cuts and manages image assets based on the source folder, build settings,
+// and deployed state
 package asset
 
 import (
+	"crypto/md5"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 
 	log "github.com/gpitfield/relog"
 	"github.com/nfnt/resize"
@@ -18,6 +23,37 @@ type SrcImage struct {
 	Suffix string
 	XVal   string
 	WVal   string
+}
+
+func Hash(asset []byte) string {
+	hash := md5.New()
+	hash.Write(asset)
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+// Given an image filename, decode its "real" name, order position, whether it is a cover image, and if it's untitled
+func FileInfo(filename string) (name string, order int, cover bool, untitled bool) {
+	name = filename
+	if strings.HasPrefix(filename, "*") {
+		cover = true
+		filename = "_" + filename[1:]
+	}
+	if strings.HasPrefix(filename, "_") {
+		parts := strings.SplitN(strings.TrimLeft(filename, "_"), "_", 2)
+		if len(parts) == 2 {
+			ord, err := strconv.Atoi(parts[0])
+			if err != nil {
+				log.Error(err)
+			}
+			name = parts[1]
+			order = ord
+		}
+	}
+	if viper.GetBool("auto-untitle") && (strings.Contains(name, "dsc") || strings.Contains(name, "DSC")) {
+		log.Infof("image %s is untitled", name)
+		untitled = true
+	}
+	return
 }
 
 // RespImages return a slice of the SrcImages the given image should be resized to

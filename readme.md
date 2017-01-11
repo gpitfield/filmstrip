@@ -5,7 +5,7 @@ Image files within the source directory can be organized into directories, and F
 
 You can specify a default copyright attribution using the `copyright` config value. It will be used for images that do not have EXIF copyright data.
 
-`home-title` specifies the name to show on the left side of the home navigation.
+`site-title` specifies the name to show on the left side of the home navigation, as well as the page title.
 
 #### Responsiveness
 Images are resized in decrements of half from their image size until their next largest dimension would be less than 100px. They are given extensions as _2, _4, _8 which indicates which fraction of the original each image is.

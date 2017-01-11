@@ -3,34 +3,22 @@ package build
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	_ "image/jpeg"
 	"io"
 	"io/ioutil"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/gpitfield/filmstrip/asset"
+	"github.com/gpitfield/filmstrip/site"
 	log "github.com/gpitfield/relog"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/mknote"
 	"github.com/spf13/viper"
 )
 
-const (
-	PubSiteDir    = "site"
-	CSSStylesDir  = "css"
-	JavaScriptDir = "js"
-	ImagesDir     = "images"
-	AboutDir      = "about"
-)
-
-var (
-	sourceLocation string
-	templates      *template.Template
-)
+var sourceLocation string
 
 func init() {
 	viper.SetConfigName("config")
@@ -38,41 +26,131 @@ func init() {
 	viper.AddConfigPath(".") // config file in working directory
 	err := viper.ReadInConfig()
 	if err != nil {
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+		panic(fmt.Errorf("Fatal config file error: %s \n", err))
 	}
 	sourceLocation = viper.GetString("source-dir") // build needs a source folder
 	exif.RegisterParsers(mknote.All...)
 }
 
 // Build the site from the provided image content where changed. If force is true, regenerate the site regardless of changes,
-// typically if the HTML has changed. Force will not copy over unchanged images, it just regenerates associated HTML.
+// typically if the HTML has changed. --force does not re-cut unchanged images, it just regenerates associated HTML.
 func Build(force bool) {
 	start := time.Now()
-	templates = loadTemplates("detail.html", "bootstrap.html", "nav.html", "gallery.html", "bottom-nav.html", "about.html")
-	Scaffold()
-
-	collections := getCollections(sourceLocation)                                        // get the directories within the sourceLocation
-	flushPrevious(append(collections, ImagesDir, AboutDir, CSSStylesDir, JavaScriptDir)) // flush all expired/deleted data from PubSiteDir
-	// root := viper.GetString("root-collection")
-	var navs = make([]NavInfo, len(collections))
-	for i, _ := range collections {
-		navs[i] = NavInfo{
-			Name: collections[i],
-			Link: "/" + collections[i] + "/index.html",
-		}
-	}
-	for i, _ := range collections {
-		// buildCollection(i, collections, navs, collections[i] == root)
-		buildCollection(i, collections, navs, force)
-	}
-
-	buildAbout(navs)
+	site.Scaffold()
+	buildCollection("", "", force)
+	buildAbout()
 	log.Infof("built in %v", time.Since(start))
 }
 
-func buildAbout(navs []NavInfo) {
-	about := renderAbout(navs)
-	err := ioutil.WriteFile(PubSiteDir+"/"+AboutDir+"/index.html", about.Bytes(), 0644)
+// buildCollection recursively builds collections from a given name and path prefix
+func buildCollection(prefix, name string, force bool) (coverInfo PrintInfo) {
+	collectionDirs(prefix, name)
+	var (
+		imageInfo     []PrintInfo
+		collName      string
+		cover         bool
+		order         int
+		validFiles    = map[string]bool{"index.html": true}
+		inPath        = prefix
+		outPath       = site.LowerDash(prefix)
+		outImagesPath string
+	)
+
+	if name != "" {
+		collName, order, _, _ = asset.FileInfo(name)
+		inPath += "/" + name
+		outPath += "/" + site.LowerDash(collName)
+	}
+	site.Flush(prefix, name)
+	outImagesPath = outPath + "/" + site.ImagesDir
+
+	files, err := ioutil.ReadDir(sourceLocation + "/" + inPath)
+	if err != nil {
+		log.Error(err)
+	}
+	log.Infof("building collection %s/%s (%d files)", prefix, name, len(files))
+
+	// recursively cut and copy changed/new images to local public site images
+	for _, file := range files {
+		if file.IsDir() {
+			imageInfo = append(imageInfo, buildCollection(inPath, file.Name(), force))
+			cover = true
+			continue
+		} else if collName == "" { // ignore any images at the topmost level
+			continue
+		} else if file.Name() == ".DS_Store" {
+			continue
+		}
+		// see if file has changed
+		source, _ := ioutil.ReadFile(sourceLocation + inPath + "/" + file.Name())
+		inHash := asset.Hash(source)
+		dest, _ := ioutil.ReadFile(site.PubSiteDir + outImagesPath + "/" + site.LowerDash(file.Name()))
+		outHash := asset.Hash(dest)
+		if force || inHash != outHash {
+			info := getInfo(file.Name(), io.Reader(bytes.NewReader(source)))
+			srcs := asset.RespImages(sourceLocation+inPath+"/"+file.Name(), site.PubSiteDir+outImagesPath, site.LowerDash(stripExtension(info.Filename)), extension(info.Filename), inHash == outHash)
+			info.SrcImages = srcs
+			info.AbsURL = outPath + "/" + info.RelURL
+			imageInfo = append(imageInfo, info)
+			for _, src := range srcs {
+				validFiles[src.Name] = true
+			}
+		} else {
+			info := getInfo(file.Name(), nil) // get the basic info for gallery generation
+			validFiles[stripExtension(file.Name())] = true
+			imageInfo = append(imageInfo, info)
+		}
+	}
+
+	sort.Sort(Ordered(imageInfo))
+	var page, gallery *bytes.Buffer
+	if len(imageInfo) > 0 {
+		coverInfo = imageInfo[0] // default
+	}
+	// generate the HTML for each image as well as the gallery using imageInfo
+	for _, info := range imageInfo {
+		if info.Cover {
+			coverInfo = info
+		}
+		validFiles[site.LowerDash(info.Title)+".html"] = true
+		validFiles[stripExtension(info.Filename)] = true
+		validFiles[info.Title] = true
+
+		if !cover && info.IncludesExif {
+			page = renderDetail(collName, info, imageInfo)
+			err = ioutil.WriteFile(site.PubSiteDir+"/"+site.LowerDash(collName)+"/"+site.LowerDash(info.Title)+".html", page.Bytes(), 0644)
+			if err != nil {
+				log.Error(err)
+			}
+		}
+	}
+	coverInfo.Title = collName
+	coverInfo.FileURL = site.LowerDash(collName)
+	coverInfo.Order = order
+	gallery = renderGallery(collName, imageInfo, cover)
+	err = ioutil.WriteFile(site.PubSiteDir+"/"+site.LowerDash(collName)+"/index.html", gallery.Bytes(), 0644)
+	if err != nil {
+		log.Error(err)
+	}
+
+	site.FlushInvalid(site.PubSiteDir+outPath, validFiles) // flush any files associated with removed images
+	return
+}
+
+func collectionDirs(parent, collection string) {
+	mode := os.ModeDir | os.ModePerm
+	if collection == "" {
+		checkErr(os.Mkdir(site.LowerDash(site.PubSiteDir+"/"+parent+"/"+site.ImagesDir), mode))
+	} else {
+		checkErr(os.Mkdir(site.LowerDash(site.PubSiteDir+"/"+parent+"/"+collection), mode))
+		checkErr(os.Mkdir(site.LowerDash(site.PubSiteDir+"/"+parent+"/"+collection)+"/"+site.ImagesDir, mode))
+	}
+}
+
+// func buildAbout(navs []NavInfo) {
+func buildAbout() {
+	about := renderAbout()
+	err := ioutil.WriteFile(site.PubSiteDir+"/"+site.AboutDir+"/index.html", about.Bytes(), 0644)
 	if err != nil {
 		log.Error(err)
 	}
@@ -82,7 +160,7 @@ func buildAbout(navs []NavInfo) {
 		log.Error(err)
 	}
 	defer inCopy.Close()
-	outFile, err := os.Create(PubSiteDir + "/" + AboutDir + "/" + "about.jpg")
+	outFile, err := os.Create(site.PubSiteDir + "/" + site.AboutDir + "/" + "about.jpg")
 	if err != nil {
 		log.Error(err)
 	}
@@ -91,115 +169,4 @@ func buildAbout(navs []NavInfo) {
 		log.Error(err)
 	}
 	outFile.Close()
-}
-
-func buildCollection(index int, colls []string, navs []NavInfo, force bool) {
-	collectionDirs(colls[index])
-	var (
-		imageInfo     []PrintInfo
-		validFiles    = map[string]bool{}
-		inPath        = sourceLocation + "/" + colls[index]
-		outPath       = PubSiteDir + "/" + colls[index]
-		outImagesPath = outPath + "/" + ImagesDir
-	)
-	images, err := ioutil.ReadDir(inPath)
-	if err != nil {
-		log.Error(err)
-	}
-
-	// go through the images, and if they are changed vs the site folder, cut and copy them over
-	// flush any images that are no longer in the collection
-	// using the imageInfo slice, generate the HTML for each image as well as the gallery
-	// flush any HTML for images no longer present
-
-	for _, image := range images {
-		if image.IsDir() {
-			log.Warnf("Sub-collections not yet supported (%s/%s)", colls[index], image.Name())
-			continue
-		}
-		// see if image has changed
-		source, _ := ioutil.ReadFile(inPath + "/" + image.Name())
-		inHash := asset.Hash(source)
-		dest, _ := ioutil.ReadFile(outImagesPath + "/" + image.Name())
-		outHash := asset.Hash(dest)
-		if force || inHash != outHash {
-			info := getInfo(image.Name(), io.Reader(bytes.NewReader(source)))
-			srcs := copyImage(colls[index], info, inHash == outHash)
-			info.SrcImages = srcs
-			imageInfo = append(imageInfo, info)
-			for _, src := range srcs {
-				validFiles[src.Name] = true
-			}
-		} else {
-			info := getInfo(image.Name(), nil) // get the basic info for gallery generation
-			validFiles[stripExtension(image.Name())] = true
-			imageInfo = append(imageInfo, info)
-		}
-	}
-
-	sort.Sort(Ordered(imageInfo))
-	var page, gallery *bytes.Buffer
-	for _, info := range imageInfo {
-		validFiles[stripExtension(info.Filename)] = true
-		validFiles[info.Title] = true
-		if info.IncludesExif {
-			page = renderDetail(colls[index], navs, info, imageInfo)
-			err = ioutil.WriteFile(PubSiteDir+"/"+colls[index]+"/"+info.Title+".html", page.Bytes(), 0644)
-			validFiles[info.Title+".html"] = true
-			if err != nil {
-				log.Error(err)
-			}
-		}
-		// if root && viper.GetString("home-title") != "" {
-		// 	page = renderDetail(viper.GetString("home-title"), navs, info, imageInfo)
-		// } else {
-		// }
-		// if root {
-		// 	err = ioutil.WriteFile(PubSiteDir+"/"+info.Title+".html", page.Bytes(), 0644)
-		// } else {
-		// }
-	}
-	// if root && viper.GetString("home-title") != "" {
-	// 	gallery = renderGallery(viper.GetString("home-title"), navs, imageInfo, index)
-	// 	err = ioutil.WriteFile(PubSiteDir+"/index.html", gallery.Bytes(), 0644)
-	// 	if err != nil {
-	// 		log.Error(err)
-	// 	}
-	// }
-
-	gallery = renderGallery(colls[index], navs, imageInfo, index)
-	err = ioutil.WriteFile(PubSiteDir+"/"+colls[index]+"/index.html", gallery.Bytes(), 0644)
-	validFiles["index.html"] = true
-	if err != nil {
-		log.Error(err)
-	}
-	flushInvalid(outPath, validFiles)
-}
-
-func copyImage(collection string, info PrintInfo, metaOnly bool) (srcSet []asset.SrcImage) {
-	return asset.RespImages(sourceLocation+"/"+collection+"/"+info.Filename, PubSiteDir+"/"+collection+"/"+ImagesDir, stripExtension(info.Filename), extension(info.Filename), metaOnly)
-}
-
-func collectionDirs(collection string) {
-	err := os.Mkdir(PubSiteDir+"/"+collection, os.ModeDir|os.ModePerm)
-	if err != nil && !strings.Contains(err.Error(), "file exists") {
-		log.Error(err)
-	}
-	err = os.Mkdir(PubSiteDir+"/"+collection+"/"+ImagesDir, os.ModeDir|os.ModePerm)
-	if err != nil && !strings.Contains(err.Error(), "file exists") {
-		log.Error(err)
-	}
-}
-
-func getCollections(source string) (colls []string) {
-	files, err := ioutil.ReadDir(source)
-	if err != nil {
-		log.Error(err)
-	}
-	for _, f := range files {
-		if f.IsDir() {
-			colls = append(colls, f.Name())
-		}
-	}
-	return colls
 }

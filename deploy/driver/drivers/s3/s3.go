@@ -21,7 +21,12 @@ const (
 )
 
 func init() {
-	driver.Drivers["s3"] = s3Driver{}
+	drv := s3Driver{}
+	err := drv.InitializeSession()
+	if err != nil {
+		log.Error(err)
+	}
+	driver.Drivers["s3"] = drv
 }
 
 type s3Driver struct {
@@ -29,19 +34,14 @@ type s3Driver struct {
 }
 
 func (s s3Driver) PutFile(localPrefix string, path string, force bool) (err error) {
-	err = s.InitializeSession()
-	if err != nil {
-		return
-	}
-
 	b, err := ioutil.ReadFile(localPrefix + "/" + path)
 	if err != nil {
 		return err
 	}
 	if !force && s.fileExistsAtPath(b, path) {
-		log.Infof("%s exists unchanged", path)
 		return
 	}
+	log.Infof("uploading %s to s3", path)
 	components := strings.Split(path, ".")
 	var (
 		contentType string
@@ -78,15 +78,12 @@ func (s s3Driver) PutFile(localPrefix string, path string, force bool) (err erro
 		log.Error(err.Error())
 		return
 	}
+	log.Infof("uploaded %s to s3", path)
 	return
 }
 
 // fileExistsAtPath checks equality of the md5 hash of the file against the S3 eTag
 func (s *s3Driver) fileExistsAtPath(b []byte, path string) bool {
-	err := s.InitializeSession()
-	if err != nil {
-		return false
-	}
 	tag := asset.Hash(b)
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(viper.GetString(S3_BUCKET)),
@@ -101,11 +98,6 @@ func (s *s3Driver) fileExistsAtPath(b []byte, path string) bool {
 }
 
 func (s s3Driver) FlushFiles(validPaths []string) (err error) {
-	err = s.InitializeSession()
-	if err != nil {
-		return
-	}
-	log.Println(validPaths)
 	var pathMap = map[string]bool{}
 	for _, path := range validPaths {
 		pathMap[path] = true

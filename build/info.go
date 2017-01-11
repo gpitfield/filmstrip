@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gpitfield/filmstrip/asset"
+	"github.com/gpitfield/filmstrip/site"
 	log "github.com/gpitfield/relog"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/spf13/viper"
@@ -18,6 +19,10 @@ import (
 type PrintInfo struct {
 	Filename     string
 	Title        string
+	Untitled     bool
+	FileURL      string
+	RelURL       string // dash-spaced, lowercased, and escaped
+	AbsURL       string // dash-spaced, lowercased, and escaped
 	IncludesExif bool
 	Order        int
 	Description  string
@@ -25,7 +30,23 @@ type PrintInfo struct {
 	DateString   string
 	CameraInfo   string
 	Copyright    string
+	Cover        bool
 	SrcImages    []asset.SrcImage
+}
+
+type NavInfo struct {
+	Name string
+	Link string
+}
+
+type PageInfo struct {
+	Title     string
+	URLTitle  string // dash-spaced, lowercased, and escaped version of Title
+	SubHed    string
+	Details   string
+	Copyright string
+	Bug       string
+	PrintInfo
 }
 
 type Ordered []PrintInfo
@@ -47,25 +68,20 @@ func (o Ordered) Less(i, j int) bool {
 
 func getInfo(filename string, r io.Reader) (info PrintInfo) {
 	info.Filename = filename
-	info.Title = stripExtension(filename)
-	if strings.HasPrefix(filename, "_") {
-		parts := strings.SplitN(strings.TrimLeft(filename, "_"), "_", 2)
-		if len(parts) == 2 {
-			pos, err := strconv.Atoi(parts[0])
-			if err != nil {
-				log.Error(err)
-			} else {
-				info.Order = pos
-				info.Title = stripExtension(parts[1])
-			}
-		}
-	}
+	title, order, cover, untitled := asset.FileInfo(filename)
+	info.Title = stripExtension(title)
+	info.Untitled = untitled
+	info.RelURL = site.Escape(info.Title)
+	info.FileURL = site.Escape(info.Filename)
+	info.Order = order
+	info.Cover = cover
 
 	if r == nil {
 		return
 	}
 	x, err := exif.Decode(r)
 	if err != nil {
+		log.Error(filename)
 		log.Fatal(err)
 	}
 	info.IncludesExif = true
