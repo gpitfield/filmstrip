@@ -1,5 +1,5 @@
 ### filmstrip
-filmstrip is a fast, opinionated, minimal, responsive, static photography site generator written in Go. You simply point its config file to a local directory of images, which are converted to a site with the same folder structure as the source directory, with images cut to multiple sizes, and gallery and detail html pages generated from EXIF and related metadata.
+filmstrip is a fast, opinionated, minimal, responsive, static photography site generator written in Go. Like [this](http://pitfield.com) You simply point its config file to a local directory of images, which are converted to a site with the same folder structure as the source directory, with images cut to multiple sizes, and gallery and detail html pages generated from EXIF and related metadata.
 
 It includes a driver for upload to S3 (just add your AWS creds to the config file), so you can host your site essentially for free, or pennies.
 
@@ -14,7 +14,7 @@ At the top level of the filmstrip directory you will find the `config.yml` file.
 
 Once that's done, run `go run main.go build` to generate your site, and `go run main.go deploy` to push it to S3.
 
-#### Lightroom EXIF options
+#### Lightroom + EXIF options
 Though it's not required, filmstrip is meant to work with Lightroom. If you export a file from Lightroom, you can tell Lightroom to run filmstrip after the image is saved and it will automatically update your site. The best way to do this is to build filmstrip via `go build .` in the `GOPATH` filmstrip directory, and then tell Lightroom to run that binary on export. In addition to the obvious ones to do with camera settings, filmstrip makes use of the "Caption" field in Lightroom to generate image descriptions.
 
 #### filmstrip Directives
@@ -34,9 +34,11 @@ Though it's not required, filmstrip is meant to work with Lightroom. If you expo
  - **aws-profile**: the aws account profile to use
  - **auto-untitle**: whether to replace raw camera file names with "Untitled" as their title
 
-#### Images Directory Structure
+#### Images Source Directory Structure
 
-Image files within the source directory can be organized into directories, and Filmstrip will generate a "collection" for each directory, indexing it on the main navigation. Images can be sorted by using the prefix `_#_`, so for example _2_portrait.jpg will be given index value 2.
+Image files within the source directory should be organized into directories, and filmstrip generates a "collection" for each directory, indexing it on the main navigation. Images can be sorted by using the prefix `_#_`, so for example _2_portrait.jpg will be given index value 2.
+
+Sub-collections are also fine, but directories should always contain either sub-directories OR images, but not a mix of both.
 
 The file name, stripped of any sorting prefix and extension, are used as image titles in the generated HTML.
 
