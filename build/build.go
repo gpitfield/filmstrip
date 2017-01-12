@@ -86,19 +86,14 @@ func buildCollection(prefix, name string, force bool) (coverInfo PrintInfo) {
 		inHash := asset.Hash(source)
 		dest, _ := ioutil.ReadFile(site.PubSiteDir + outImagesPath + "/" + site.LowerDash(file.Name()))
 		outHash := asset.Hash(dest)
-		if force || inHash != outHash {
-			info := getInfo(file.Name(), io.Reader(bytes.NewReader(source)))
-			srcs := asset.RespImages(sourceLocation+inPath+"/"+file.Name(), site.PubSiteDir+outImagesPath, site.LowerDash(stripExtension(info.Filename)), extension(info.Filename), inHash == outHash)
-			info.SrcImages = srcs
-			info.AbsURL = outPath + "/" + info.RelURL
-			imageInfo = append(imageInfo, info)
-			for _, src := range srcs {
-				validFiles[src.Name] = true
-			}
-		} else {
-			info := getInfo(file.Name(), nil) // get the basic info for gallery generation
-			validFiles[stripExtension(file.Name())] = true
-			imageInfo = append(imageInfo, info)
+		info := getInfo(file.Name(), io.Reader(bytes.NewReader(source)))
+		validFiles[stripExtension(file.Name())] = true
+		srcs := asset.RespImages(sourceLocation+inPath+"/"+file.Name(), site.PubSiteDir+outImagesPath, site.LowerDash(stripExtension(info.Filename)), extension(info.Filename), inHash == outHash)
+		info.SrcImages = srcs
+		info.AbsURL = outPath + "/" + info.RelURL
+		imageInfo = append(imageInfo, info)
+		for _, src := range srcs {
+			validFiles[src.Name] = true
 		}
 	}
 

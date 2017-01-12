@@ -50,7 +50,6 @@ func FileInfo(filename string) (name string, order int, cover bool, untitled boo
 		}
 	}
 	if viper.GetBool("auto-untitle") && (strings.Contains(name, "dsc") || strings.Contains(name, "DSC")) {
-		log.Infof("image %s is untitled", name)
 		untitled = true
 	}
 	return
@@ -58,16 +57,29 @@ func FileInfo(filename string) (name string, order int, cover bool, untitled boo
 
 // RespImages return a slice of the SrcImages the given image should be resized to
 func RespImages(inPath string, outDir string, baseName string, extension string, metaOnly bool) (srcSet []SrcImage) {
+	var (
+		bounds image.Rectangle
+		img    image.Image
+		err    error
+	)
 	in, err := os.Open(inPath)
 	if err != nil {
 		log.Error(err)
 	}
 	defer in.Close()
-	img, _, err := image.Decode(in)
-	if err != nil {
-		log.Error(err)
+	if metaOnly {
+		cfg, _, err := image.DecodeConfig(in)
+		if err != nil {
+			log.Error(err)
+		}
+		bounds = image.Rect(0, 0, cfg.Width, cfg.Height)
+	} else {
+		img, _, err = image.Decode(in)
+		if err != nil {
+			log.Error(err)
+		}
+		bounds = img.Bounds()
 	}
-	bounds := img.Bounds()
 	srcSet = []SrcImage{SrcImage{
 		Bounds: bounds,
 		Suffix: "",

@@ -142,10 +142,25 @@ func getInfo(filename string, r io.Reader) (info PrintInfo) {
 	}
 
 	if tag, err := x.Get(exif.Model); err == nil {
+		model := strings.Trim(tag.String(), "\"")
 		if info.CameraInfo != "" {
 			info.CameraInfo += " | "
 		}
-		info.CameraInfo += strings.Trim(tag.String(), "\"")
+		if makeTag, err := x.Get(exif.Make); err == nil {
+			makes := strings.Split(strings.Trim(makeTag.String(), "\""), " ")
+			includeMake := true
+			for _, make := range makes {
+				if strings.Contains(model, make) {
+					includeMake = false
+					// break
+				}
+			}
+			if includeMake {
+				info.CameraInfo += strings.Trim(makeTag.String(), "\"") + " " + model
+			} else {
+				info.CameraInfo += strings.Trim(tag.String(), "\"")
+			}
+		}
 	}
 
 	if tag, err := x.Get(exif.LensModel); err == nil {

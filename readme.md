@@ -1,5 +1,5 @@
-### filmstrip
-filmstrip is a fast, opinionated, minimal, responsive, static photography site generator written in Go. Like [this](http://pitfield.com) You simply point its config file to a local directory of images, which are converted to a site with the same folder structure as the source directory, with images cut to multiple sizes, and gallery and detail html pages generated from EXIF and related metadata.
+## filmstrip
+filmstrip is a reasonably fast, opinionated, minimal, responsive, static photography site generator written in Go. Like [this](http://pitfield.com). You simply point its config file to a local directory of images, which are converted to a site with the same folder structure as the source directory, with images cut to multiple sizes, and gallery and detail html pages generated from EXIF and related metadata.
 
 It includes a driver for upload to S3 (just add your AWS creds to the config file), so you can host your site essentially for free, or pennies.
 
@@ -45,5 +45,5 @@ The file name, stripped of any sorting prefix and extension, are used as image t
 #### Responsiveness
 Images are resized in decrements of half from their image size until their next largest dimension would be less than 100px. They are given extensions as _2, _4, _8 which indicates which fraction of the original each image is.
 
-### Test coverage
+#### Test coverage
 Derp. There is no test coverage. I built this for my own personal use and while I will probably add some tests, as of right now there aren't any. Boo. I know. Pull request?
